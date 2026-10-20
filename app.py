@@ -209,6 +209,7 @@ def analyze_resume_file(file_path, job_description=""):
         "recommendations": analysis["recommendations"],
         "deductions": analysis["deductions"],
         "optimized_sections": analysis["optimized_sections"],
+        "point_transformations": analysis.get("point_transformations", []),
         "is_ai_powered": analysis["is_ai_powered"],
         "jobs_list": jobs_list
     }

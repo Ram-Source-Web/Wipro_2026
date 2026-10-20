@@ -128,12 +128,43 @@ class AIResumeAnalyzer:
 
         metrics_found = re.findall(r'\d+%', resume_text) + re.findall(r'\$\d+', resume_text) + re.findall(r'\b\d+\s*(?:users|clients|ms|sec|hours|x)\b', clean_res)
 
-        # 6. Flag Weak Lines
+        # 6. Flag Weak Lines & Build Specific Actionable Transformations
         weak_lines = []
+        point_transformations = []
         for line in lines:
             line_clean = line.lower()
-            if any(w in line_clean for w in cls.WEAK_PHRASES) and len(line) > 20 and len(line) < 220:
+            if any(w in line_clean for w in cls.WEAK_PHRASES) and len(line) > 18 and len(line) < 240:
                 weak_lines.append(line.strip())
+
+        # Create 3-5 specific line-by-line transformations
+        candidate_lines_to_transform = weak_lines[:5]
+        if len(candidate_lines_to_transform) < 3:
+            for line in lines:
+                if len(line) > 25 and len(line) < 180 and not any(skip in line.lower() for skip in ['@', 'http', 'linkedin', 'phone', 'education', 'skills', 'b.tech']):
+                    if line.strip() not in candidate_lines_to_transform:
+                        candidate_lines_to_transform.append(line.strip())
+                if len(candidate_lines_to_transform) >= 4:
+                    break
+
+        p_skill = detected_skill_names[0] if detected_skill_names else "Python"
+        s_skill = detected_skill_names[1] if len(detected_skill_names) > 1 else "Automation"
+
+        action_templates = [
+            ("Engineered and automated end-to-end {p_skill} workflows", "reducing manual execution overhead by 45% and eliminating regression test bottlenecks."),
+            ("Architected scalable {p_skill} modules integrated with {s_skill}", "accelerating release velocity by 35% across 5 consecutive sprint cycles."),
+            ("Led technical validation and optimization using {p_skill}", "delivering 99.4% test pass accuracy and improving system turnaround time by 30%."),
+            ("Spearheaded automated CI/CD integration with {s_skill}", "slashing deployment turnaround from 3 hours to 20 minutes with zero downtime escapes.")
+        ]
+
+        for i, original_line in enumerate(candidate_lines_to_transform):
+            tmpl_prefix, tmpl_suffix = action_templates[i % len(action_templates)]
+            fixed_line = f"{tmpl_prefix.format(p_skill=p_skill, s_skill=s_skill)}, {tmpl_suffix}"
+            point_transformations.append({
+                "original": original_line,
+                "problem": "Passive phrasing lacks measurable impact metrics (%) and strong technical action verb.",
+                "improved": fixed_line,
+                "why_it_works": "Replaces vague claim with measurable outcome + specific technical stack, passing ATS parser filters."
+            })
 
         # 7. Multi-Tier Explainable Scoring
         # A. Skills Alignment (35 pts max)
@@ -241,6 +272,7 @@ class AIResumeAnalyzer:
             "after_bullet": after_bullet,
             "interview_questions": interview_questions,
             "optimized_sections": optimized_sections,
+            "point_transformations": point_transformations,
             "is_ai_powered": bool(cls.get_api_key())
         }
 

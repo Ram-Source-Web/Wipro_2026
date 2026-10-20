@@ -2,6 +2,9 @@ import os
 import re
 import json
 import sqlite3
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_from_directory, flash
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -266,25 +269,111 @@ def analyze_resume_file(file_path):
             "severity": "Critical"
         })
 
-    # AI Generated Professional Summary
-    primary_role = "QA Automation & Test Engineer" if any(s.lower() in clean_text for s in ["selenium", "testing", "pytest", "qa"]) else "Full-Stack Software Engineer"
-    summary_ai = (
-        f"Results-driven {primary_role} proficient in {', '.join(skills_found[:4]) if skills_found else 'modern software engineering'}. "
-        f"Experienced in developing scalable applications and test suites, focusing on code reliability, defect reduction, and rapid deployment cycles."
-    )
-    
-    # AI Sample Bullet Point Transformation
-    before_bullet = "Worked on manual testing and writing python scripts for the web app."
-    after_bullet = f"Engineered automated test suites using {skills_found[0] if skills_found else 'Python'}, reducing regression testing turnaround time by 45% and eliminating critical production defects."
+    # AI Generated Professional Summary - PERSONALIZED from resume
+    primary_skill_str = ", ".join(skills_found[:5]) if skills_found else "modern software engineering"
+    if any(s.lower() in clean_text for s in ["selenium", "pytest", "qa", "quality", "testing", "test"]):
+        primary_role = "QA Automation & Test Engineer"
+        role_focus = "automated testing, quality assurance, and defect prevention"
+    elif any(s.lower() in clean_text for s in ["react", "node", "frontend", "backend", "full-stack", "fullstack"]):
+        primary_role = "Full-Stack Software Engineer"
+        role_focus = "end-to-end application development and scalable system design"
+    elif any(s.lower() in clean_text for s in ["data", "machine learning", "ml", "ai", "analytics", "pandas", "numpy"]):
+        primary_role = "Data & ML Engineer"
+        role_focus = "data pipelines, machine learning models, and analytical insights"
+    elif any(s.lower() in clean_text for s in ["devops", "docker", "kubernetes", "ci/cd", "jenkins", "aws", "azure"]):
+        primary_role = "DevOps & Cloud Engineer"
+        role_focus = "CI/CD automation, containerization, and cloud infrastructure"
+    else:
+        primary_role = "Software Engineer"
+        role_focus = "software development, system integration, and delivery excellence"
 
-    # Top tailored interview questions
-    interview_questions = [
-        f"How have you applied {skills_found[0] if skills_found else 'Python'} to solve a challenging performance or automation bottleneck?",
-        f"Can you explain your approach to test framework design or API validation when working with {skills_found[1] if len(skills_found) > 1 else 'REST APIs'}?",
-        "Describe a time when you identified a critical bug right before deployment. How did you diagnose and remediate it?",
-        "How do you ensure proper version control and cross-functional collaboration using Git and Agile practices?",
-        "What metrics do you use to quantify the business impact and reliability of your software deliverable?"
+    # Extract candidate's actual experience years if mentioned
+    exp_match = re.search(r'(\d+)\s*\+?\s*(?:years?|yrs?)\s*(?:of)?\s*experience', clean_text)
+    exp_str = f"{exp_match.group(1)}+ years of experience in" if exp_match else "hands-on experience in"
+
+    # Extract actual company/project names from resume for personalization
+    company_matches = re.findall(r'(?:at|@|with|for)\s+([A-Z][A-Za-z\s&]+(?:Ltd|Inc|Corp|Technologies|Solutions|Systems|Pvt)?)', text[:2000])
+    company_str = f" at organizations including {company_matches[0].strip()}" if company_matches else ""
+
+    summary_ai = (
+        f"Results-driven {primary_role} with {exp_str} {role_focus}. "
+        f"Proficient in {primary_skill_str}{company_str}. "
+        f"Demonstrated ability to deliver high-quality solutions, reduce production defects, and accelerate deployment cycles in Agile environments. "
+        f"Seeking to leverage technical expertise to drive measurable business impact."
+    )
+
+    # AI Bullet Point Transformation - extract REAL weak lines from the actual resume
+    # Find actual bullet points / experience lines that are weak/passive
+    resume_lines = [l.strip() for l in text.split('\n') if l.strip() and len(l.strip()) > 20]
+    
+    weak_line_found = None
+    for line in resume_lines:
+        line_lower = line.lower()
+        if any(w in line_lower for w in WEAK_PASSIVE_WORDS):
+            if len(line) < 200:  # reasonable bullet point length
+                weak_line_found = line.strip()
+                break
+
+    # If no weak line found, pick a real experience line and mark it as improvable
+    if not weak_line_found:
+        for line in resume_lines:
+            if len(line) > 30 and len(line) < 180 and not any(
+                skip in line.lower() for skip in ['email', 'phone', '@', 'linkedin', 'github', 'http', '|', 'education', 'experience', 'skills', 'projects']
+            ):
+                weak_line_found = line.strip()
+                break
+
+    before_bullet = weak_line_found if weak_line_found else f"Worked on {primary_skill_str.split(',')[0]} tasks for the project."
+
+    # Generate a strong ATS rewrite of that specific line
+    first_skill = skills_found[0] if skills_found else "Python"
+    second_skill = skills_found[1] if len(skills_found) > 1 else "automation"
+    
+    # Detect what kind of work they did from the weak line
+    weak_lower = before_bullet.lower()
+    if any(w in weak_lower for w in ["test", "qa", "selenium", "manual"]):
+        after_bullet = (f"Engineered end-to-end {first_skill} automated test suites covering {second_skill} workflows, "
+                       f"reducing manual QA effort by 60% and achieving 98% regression pass rate across 3 sprint cycles.")
+    elif any(w in weak_lower for w in ["develop", "build", "creat", "implement", "code"]):
+        after_bullet = (f"Architected and deployed scalable {first_skill} modules integrated with {second_skill}, "
+                       f"reducing bug backlog by 45% and accelerating feature delivery by 2 sprint cycles.")
+    elif any(w in weak_lower for w in ["manag", "lead", "coordin", "oversee"]):
+        after_bullet = (f"Spearheaded cross-functional {first_skill} initiative managing {second_skill} deliverables "
+                       f"across 5+ stakeholders, delivering 100% on-time with zero critical defects.")
+    elif any(w in weak_lower for w in ["data", "analy", "report", "dashboard"]):
+        after_bullet = (f"Designed and automated {first_skill} data pipeline processing 50K+ records daily using {second_skill}, "
+                       f"improving reporting accuracy by 35% and reducing manual effort by 4 hours/week.")
+    else:
+        after_bullet = (f"Engineered production-grade {first_skill} solution leveraging {second_skill} best practices, "
+                       f"improving system performance by 40% and reducing deployment time from 2 hours to 15 minutes.")
+
+    # Top tailored interview questions based on ACTUAL skills in resume
+    interview_questions = []
+    if len(skills_found) >= 1:
+        interview_questions.append(f"Walk me through a real project where you used {skills_found[0]} to solve a complex technical challenge. What was the impact?")
+    if len(skills_found) >= 2:
+        interview_questions.append(f"How have you integrated {skills_found[1]} with {skills_found[0] if skills_found else 'other tools'} in a production environment? What issues did you face?")
+    if any(s.lower() in clean_text for s in ["testing", "selenium", "qa", "pytest"]):
+        interview_questions.append("Describe your test strategy for a feature with no existing test coverage. How do you prioritize test cases?")
+    if any(s.lower() in clean_text for s in ["git", "github", "agile", "scrum", "jira"]):
+        interview_questions.append("How do you manage merge conflicts and code reviews in a team of 5+ developers? Walk me through your Git workflow.")
+    if any(s.lower() in clean_text for s in ["api", "rest", "postman", "microservices"]):
+        interview_questions.append(f"How do you validate and test REST APIs end-to-end? Give an example using {skills_found[0] if skills_found else 'your tools'}.")
+    if len(metrics_match) == 0:
+        interview_questions.append("Give a specific example where your work had a quantifiable business impact. What metric did you improve and by how much?")
+    if any(s.lower() in clean_text for s in ["docker", "aws", "azure", "kubernetes", "ci/cd"]):
+        interview_questions.append(f"Describe a CI/CD pipeline you built or improved. What tools did you use and what was the deployment frequency before vs. after?")
+    # Fill remaining to get 5 questions
+    fallbacks = [
+        "How do you keep your technical skills up to date? Share the last course or certification you completed.",
+        "Describe a time you identified and fixed a critical production bug under pressure. What was your debugging process?",
+        "How do you prioritize tasks when working on multiple deadlines simultaneously?",
+        "What is your experience with code reviews — as a reviewer and as a reviewee? How do you give constructive feedback?",
     ]
+    for fb in fallbacks:
+        if len(interview_questions) >= 5:
+            break
+        interview_questions.append(fb)
 
     # Generate 15 targeted live job links across Bangalore, Hyderabad & Remote
     top_skill = skills_found[0] if skills_found else "Software"
@@ -345,7 +434,32 @@ def analyze_resume_file(file_path):
         "breakdown": breakdown
     }
 
-# ----------------- USER AUTHENTICATION & ACCESS -----------------
+def send_owner_alert(subject, body_html):
+    """Send email alert to owner (Ram) via Gmail SMTP."""
+    try:
+        owner_email = get_setting("owner_email", "ramudubandaru987@gmail.com")
+        sender_email = os.environ.get("ALERT_EMAIL", "")
+        sender_password = os.environ.get("ALERT_EMAIL_PASS", "")
+        
+        if not sender_email or not sender_password:
+            # Silently skip if email creds not set — don't break the app
+            print(f"[ALERT - no email creds] {subject}: {body_html[:200]}")
+            return False
+            
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🔔 SkillBoost ATS | {subject}"
+        msg["From"] = sender_email
+        msg["To"] = owner_email
+        msg.attach(MIMEText(body_html, "html"))
+        
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, owner_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[EMAIL ALERT ERROR] {e}")
+        return False
+
 
 def get_current_user():
     if "user_id" in session:
@@ -559,6 +673,7 @@ def submit_payment():
         return jsonify({"error": "Please provide your 12-digit UPI Transaction / UTR ID."}), 400
 
     conn = get_db()
+    scan = conn.execute("SELECT * FROM scans WHERE id = ? AND user_id = ?", (scan_id, user["id"])).fetchone()
     conn.execute("""
         UPDATE scans 
         SET txn_id = ?, payment_status = 'pending'
@@ -567,9 +682,35 @@ def submit_payment():
     conn.commit()
     conn.close()
 
+    # Send email alert to owner
+    candidate_name = scan["candidate_name"] if scan else "Unknown"
+    price_inr = get_setting("price_inr", "149")
+    admin_url = f"https://skillboost-ats.onrender.com/admin/dashboard"
+    alert_html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#0f172a;color:#e2e8f0;padding:24px;border-radius:12px;">
+      <h2 style="color:#34d399;margin-bottom:4px;">💰 New Payment Received!</h2>
+      <p style="color:#94a3b8;font-size:13px;">Someone just paid for SkillBoost ATS report unlock.</p>
+      <table style="width:100%;margin-top:16px;border-collapse:collapse;">
+        <tr><td style="padding:8px;color:#94a3b8;font-size:13px;">👤 User Name</td><td style="padding:8px;color:#fff;font-weight:bold;">{user['name']}</td></tr>
+        <tr style="background:#1e293b;"><td style="padding:8px;color:#94a3b8;font-size:13px;">📧 User Email</td><td style="padding:8px;color:#38bdf8;">{user['email']}</td></tr>
+        <tr><td style="padding:8px;color:#94a3b8;font-size:13px;">📄 Resume / Scan ID</td><td style="padding:8px;color:#fff;">#{scan_id} — {candidate_name}</td></tr>
+        <tr style="background:#1e293b;"><td style="padding:8px;color:#94a3b8;font-size:13px;">💳 UTR / Transaction ID</td><td style="padding:8px;color:#fbbf24;font-weight:bold;font-family:monospace;">{txn_id}</td></tr>
+        <tr><td style="padding:8px;color:#94a3b8;font-size:13px;">💵 Amount</td><td style="padding:8px;color:#34d399;font-weight:bold;">₹{price_inr}</td></tr>
+        <tr style="background:#1e293b;"><td style="padding:8px;color:#94a3b8;font-size:13px;">🕐 Time</td><td style="padding:8px;color:#fff;">{datetime.now().strftime('%d %b %Y, %I:%M %p IST')}</td></tr>
+      </table>
+      <div style="margin-top:20px;text-align:center;">
+        <a href="{admin_url}" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
+          ✅ Verify Payment in Admin Panel →
+        </a>
+      </div>
+      <p style="color:#475569;font-size:11px;margin-top:16px;text-align:center;">SkillBoost ATS Platform | Owner: Ram Bandaru</p>
+    </div>
+    """
+    send_owner_alert(f"Payment Pending — {user['name']} | ₹{price_inr} | UTR: {txn_id}", alert_html)
+
     return jsonify({
         "success": True, 
-        "message": "Payment submitted! Admin will verify and unlock your full AI report within minutes."
+        "message": "✅ Payment submitted! The owner will verify and unlock your full AI report within minutes. Please wait or refresh the page."
     })
 
 # ----------------- B2B AGENCY WEBSITE REQUEST -----------------

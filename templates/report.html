@@ -38,12 +38,24 @@
       <!-- Right Score Circle Gauge -->
       <div class="md:col-span-4 flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-900/60 border border-slate-800 text-center">
         <span class="text-xs font-mono text-slate-400 uppercase tracking-widest mb-1">Overall ATS Score</span>
-        <div class="text-5xl font-black font-mono {% if scan.score >= 75 %}text-emerald-400{% elif scan.score >= 50 %}text-amber-400{% else %}text-red-400{% endif %}">
-          {{ scan.score }}%
-        </div>
-        <span class="text-xs font-semibold mt-2 {% if scan.score >= 75 %}text-emerald-400{% elif scan.score >= 50 %}text-amber-400{% else %}text-red-400{% endif %}">
-          {% if scan.score >= 75 %}Strong ATS Compatibility{% elif scan.score >= 50 %}Moderate — Optimization Needed{% else %}High Rejection Risk{% endif %}
-        </span>
+        {% if is_unlocked %}
+          <div class="text-5xl font-black font-mono {% if scan.score >= 75 %}text-emerald-400{% elif scan.score >= 50 %}text-amber-400{% else %}text-red-400{% endif %}">
+            {{ scan.score }}%
+          </div>
+          <span class="text-xs font-semibold mt-2 {% if scan.score >= 75 %}text-emerald-400{% elif scan.score >= 50 %}text-amber-400{% else %}text-red-400{% endif %}">
+            {% if scan.score >= 75 %}Strong ATS Compatibility{% elif scan.score >= 50 %}Moderate — Optimization Needed{% else %}High Rejection Risk{% endif %}
+          </span>
+        {% else %}
+          <div class="text-5xl font-black font-mono text-slate-600 select-none relative">
+            <span class="blur-sm">{{ scan.score }}%</span>
+          </div>
+          <div class="mt-2 flex items-center gap-1.5 text-xs text-amber-400 font-semibold">
+            <i class="fa-solid fa-lock"></i> Score locked — unlock after payment
+          </div>
+          {% if scan.payment_status == 'pending' %}
+            <span class="mt-2 text-[11px] text-cyan-400">⏳ Payment pending verification...</span>
+          {% endif %}
+        {% endif %}
         <p class="text-[10px] text-slate-500 mt-2 italic">
           *Calculated based on automated parser rules. Score does not guarantee interview shortlisting.
         </p>
@@ -208,38 +220,66 @@
       <div class="border-b border-slate-800 pb-4">
         <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-mono font-semibold">Unlocked AI Features</span>
         <h3 class="text-xl font-bold text-white mt-1">AI Resume Optimizer & Bullet Point Rewriter</h3>
+        <p class="text-xs text-slate-400 mt-1">100% personalized from YOUR resume content — copy and paste directly into your resume.</p>
       </div>
 
       <!-- AI Professional Summary -->
       <div class="space-y-2">
-        <h4 class="text-xs font-mono uppercase tracking-wider text-cyan-400">AI-Generated Professional Summary (Copy to Resume):</h4>
-        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-cyan-400">✨ AI-Generated Professional Summary (Personalized from your resume):</h4>
+          <button onclick="copyText('summary-text', this)" class="text-[11px] px-3 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all font-mono">📋 Copy</button>
+        </div>
+        <div id="summary-text" class="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-xs sm:text-sm text-emerald-200 leading-relaxed font-sans">
           {{ breakdown.summary_ai or "Professional Software Engineer experienced in development and automated testing." }}
         </div>
       </div>
 
-      <!-- AI Bullet Point Transformation (Before vs After) -->
+      <!-- AI Bullet Point Transformation (Before vs After) - Real resume lines -->
       <div class="space-y-3">
-        <h4 class="text-xs font-mono uppercase tracking-wider text-indigo-400">AI Bullet Point Impact Rewrite:</h4>
+        <h4 class="text-xs font-mono uppercase tracking-wider text-indigo-400">🔁 Real Bullet Point Rewrite (From YOUR Resume — Before & After):</h4>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="p-4 rounded-2xl bg-red-500/5 border border-red-500/20 space-y-1">
-            <span class="text-[11px] font-mono text-red-400 font-bold uppercase">❌ Before (Weak / Passive):</span>
-            <p class="text-xs text-slate-300">{{ breakdown.before_bullet }}</p>
+          <div class="p-4 rounded-2xl bg-red-500/5 border border-red-500/20 space-y-2">
+            <span class="text-[11px] font-mono text-red-400 font-bold uppercase">❌ Before (Weak / Passive from your resume):</span>
+            <p class="text-xs text-slate-300 leading-relaxed">{{ breakdown.before_bullet }}</p>
           </div>
-          <div class="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
-            <span class="text-[11px] font-mono text-emerald-400 font-bold uppercase">✅ After (High-Impact ATS Format):</span>
-            <p class="text-xs text-emerald-200 font-medium">{{ breakdown.after_bullet }}</p>
+          <div class="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-mono text-emerald-400 font-bold uppercase">✅ After (ATS-Optimized, High-Impact):</span>
+              <button onclick="copyText('after-bullet-text', this)" class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600 border border-emerald-500/30 text-emerald-300 hover:text-white transition-all">📋 Copy</button>
+            </div>
+            <p id="after-bullet-text" class="text-xs text-emerald-200 font-medium leading-relaxed">{{ breakdown.after_bullet }}</p>
           </div>
         </div>
       </div>
 
+      <!-- Full Resume Rewrite Section — Green = improved, Red = original weak line -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-purple-400">📝 Your Resume — Weak Lines Highlighted (Red → Fix → Green):</h4>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-950 border border-slate-800 max-h-80 overflow-y-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+          {% set resume_lines = scan.resume_text.split('\n') if scan.resume_text else [] %}
+          {% for line in resume_lines %}
+            {% set line_lower = line.lower() %}
+            {% if 'worked on' in line_lower or 'responsible for' in line_lower or 'helped with' in line_lower or 'assisted in' in line_lower or 'handled' in line_lower or 'participated in' in line_lower or 'tasked with' in line_lower or 'duties included' in line_lower or 'familiar with' in line_lower %}
+              <span class="text-red-400 block">❌ {{ line }}</span>
+            {% elif line.strip() and line|length > 20 %}
+              <span class="text-emerald-300 block">{{ line }}</span>
+            {% else %}
+              <span class="text-slate-500 block">{{ line }}</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <p class="text-[11px] text-slate-500 italic">❌ Red lines = weak/passive phrasing that hurts ATS ranking. Replace them using the bullet rewrite above.</p>
+      </div>
+
       <!-- Top 5 Interview Questions Generator -->
       <div class="space-y-3">
-        <h4 class="text-xs font-mono uppercase tracking-wider text-purple-400">Tailored Technical Interview Questions to Prepare For:</h4>
+        <h4 class="text-xs font-mono uppercase tracking-wider text-purple-400">🎯 Tailored Technical Interview Questions (Based on YOUR Skills):</h4>
         <ul class="space-y-2">
           {% for q in breakdown.interview_questions %}
             <li class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
-              <span class="text-purple-400 font-bold font-mono">Q{{ loop.index }}.</span>
+              <span class="text-purple-400 font-bold font-mono shrink-0">Q{{ loop.index }}.</span>
               <span>{{ q }}</span>
             </li>
           {% endfor %}
@@ -332,6 +372,18 @@
 
 {% block scripts %}
 <script>
+  // Copy text helper
+  function copyText(elementId, btn) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    navigator.clipboard.writeText(el.innerText).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = '✅ Copied!';
+      btn.classList.add('bg-emerald-600', 'text-white');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('bg-emerald-600', 'text-white'); }, 2000);
+    });
+  }
+
   const payBtn = document.getElementById('submit-pay-btn');
   if (payBtn) {
     payBtn.addEventListener('click', async () => {

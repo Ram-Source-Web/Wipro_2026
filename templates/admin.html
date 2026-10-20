@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard | SkillBoost Control Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-[#0A0E17] text-slate-200 font-sans min-h-screen">
+
+  <!-- Top bar -->
+  <header class="border-b border-slate-800 bg-[#111827] px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white">R</span>
+      <span class="font-extrabold text-white text-base">Ram's Control Center</span>
+      <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">Live</span>
+    </div>
+    <div class="flex items-center gap-4 text-xs">
+      <a href="/" target="_blank" class="text-slate-400 hover:text-white"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> View Live Site</a>
+      <a href="/admin/logout" class="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20">Logout</a>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+    <!-- KPI Cards & Settings Bar -->
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div class="p-5 rounded-2xl bg-[#111827] border border-slate-800">
+        <span class="text-xs font-mono text-slate-400">TOTAL SCANS</span>
+        <div class="text-3xl font-extrabold text-white mt-1">{{ scans|length }}</div>
+      </div>
+      <div class="p-5 rounded-2xl bg-[#111827] border border-slate-800">
+        <span class="text-xs font-mono text-amber-400">FREE SCANS LEFT</span>
+        <div class="text-3xl font-extrabold text-amber-400 mt-1">{{ free_scans }}</div>
+      </div>
+      <div class="p-5 rounded-2xl bg-[#111827] border border-slate-800">
+        <span class="text-xs font-mono text-cyan-400">PRICE PER SCAN</span>
+        <div class="text-3xl font-extrabold text-cyan-400 mt-1">₹{{ price_inr }}</div>
+      </div>
+      <div class="p-5 rounded-2xl bg-[#111827] border border-slate-800">
+        <span class="text-xs font-mono text-emerald-400">WEBSITE CLIENT LEADS</span>
+        <div class="text-3xl font-extrabold text-emerald-400 mt-1">{{ leads|length }}</div>
+      </div>
+    </div>
+
+    <!-- Quick Settings Box -->
+    <div class="p-6 rounded-2xl bg-[#111827] border border-slate-800">
+      <h3 class="text-sm font-bold text-white mb-4"><i class="fa-solid fa-sliders text-cyan-400 mr-2"></i> Quick Settings & Pricing Control</h3>
+      <form action="/admin/update-settings" method="POST" class="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+        <div>
+          <label class="block text-xs font-mono text-slate-400 mb-1">Set Free Scans Remaining</label>
+          <input type="number" name="free_scans" value="{{ free_scans }}" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white">
+        </div>
+        <div>
+          <label class="block text-xs font-mono text-slate-400 mb-1">Price per Scan (₹)</label>
+          <input type="number" name="price_inr" value="{{ price_inr }}" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white">
+        </div>
+        <div>
+          <label class="block text-xs font-mono text-slate-400 mb-1">Your UPI ID for Payments</label>
+          <input type="text" name="upi_id" value="{{ upi_id }}" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white">
+        </div>
+        <button type="submit" class="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all">
+          Save Settings
+        </button>
+      </form>
+    </div>
+
+    <!-- Uploaded Resumes Table -->
+    <div class="p-6 rounded-2xl bg-[#111827] border border-slate-800 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white"><i class="fa-solid fa-users text-indigo-400 mr-2"></i> Uploaded Resumes & Leads ({{ scans|length }})</h3>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="border-b border-slate-800 text-slate-400 font-mono text-[11px] uppercase">
+            <tr>
+              <th class="py-3 px-3">Date</th>
+              <th class="py-3 px-3">Candidate</th>
+              <th class="py-3 px-3">Email & Phone</th>
+              <th class="py-3 px-3">Score</th>
+              <th class="py-3 px-3">Status</th>
+              <th class="py-3 px-3">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60 font-mono">
+            {% for s in scans %}
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3 px-3 text-slate-400">{{ s.created_at[:16] }}</td>
+                <td class="py-3 px-3 font-semibold text-white">{{ s.candidate_name }}</td>
+                <td class="py-3 px-3">
+                  <div>{{ s.email or 'N/A' }}</div>
+                  <div class="text-[11px] text-slate-400">{{ s.phone or '' }}</div>
+                </td>
+                <td class="py-3 px-3">
+                  <span class="px-2 py-0.5 rounded font-bold {% if s.score >= 70 %}bg-emerald-500/10 text-emerald-400{% else %}bg-amber-500/10 text-amber-400{% endif %}">
+                    {{ s.score }}%
+                  </span>
+                </td>
+                <td class="py-3 px-3">
+                  {% if s.is_free_scan == 1 %}
+                    <span class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[10px]">Free Scan</span>
+                  {% elif s.is_free_scan == 2 %}
+                    <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px]" title="Txn: {{ s.txn_id }}">Paid (₹{{ price_inr }})</span>
+                  {% else %}
+                    <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px]">Unpaid</span>
+                  {% endif %}
+                </td>
+                <td class="py-3 px-3">
+                  <a href="/admin/download/{{ s.filename }}" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px] transition-colors inline-flex items-center gap-1">
+                    <i class="fa-solid fa-download"></i> PDF
+                  </a>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-8 text-slate-500 font-sans">No resumes uploaded yet. When users scan their resume, they will appear here!</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Founder Website Client Leads Table -->
+    <div class="p-6 rounded-2xl bg-[#111827] border border-slate-800 space-y-4">
+      <h3 class="text-sm font-bold text-white"><i class="fa-solid fa-briefcase text-emerald-400 mr-2"></i> Founder Website Inquiries (High-Ticket Deals)</h3>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="border-b border-slate-800 text-slate-400 font-mono text-[11px] uppercase">
+            <tr>
+              <th class="py-3 px-3">Date</th>
+              <th class="py-3 px-3">Client Name</th>
+              <th class="py-3 px-3">Email</th>
+              <th class="py-3 px-3">Service</th>
+              <th class="py-3 px-3">Budget</th>
+              <th class="py-3 px-3">Project Details</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60 font-mono">
+            {% for lead in leads %}
+              <tr class="hover:bg-slate-800/30">
+                <td class="py-3 px-3 text-slate-400">{{ lead.created_at[:16] }}</td>
+                <td class="py-3 px-3 font-semibold text-white">{{ lead.client_name }}</td>
+                <td class="py-3 px-3 text-cyan-400">{{ lead.email }}</td>
+                <td class="py-3 px-3">{{ lead.project_type }}</td>
+                <td class="py-3 px-3 text-emerald-400 font-bold">{{ lead.budget }}</td>
+                <td class="py-3 px-3 text-slate-300 font-sans max-w-xs truncate">{{ lead.description }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-8 text-slate-500 font-sans">No website inquiries yet. When founders submit inquiries, their contact info and budgets will appear here!</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</body>
+</html>

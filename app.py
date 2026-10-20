@@ -6,9 +6,11 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_from_directory, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_from_directory, flash, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from pypdf import PdfReader
+from ai_engine import AIResumeAnalyzer
+from pdf_service import generate_ats_report_pdf
 
 app = Flask(__name__)
 app.secret_key = "skillboost-ats-ram-bandaru-production-key-2026"
@@ -93,6 +95,7 @@ def init_db():
     # Safe migrations
     for col, col_type in [
         ("resume_text", "TEXT"),
+        ("job_description", "TEXT"),
         ("mistakes_json", "TEXT"),
         ("breakdown_json", "TEXT"),
         ("is_free", "INTEGER DEFAULT 1"),
@@ -163,7 +166,7 @@ WEAK_PASSIVE_WORDS = [
     "participated in", "tasked with", "duties included", "familiar with"
 ]
 
-def analyze_resume_file(file_path):
+def analyze_resume_file(file_path, job_description=""):
     text = ""
     try:
         reader = PdfReader(file_path)
@@ -175,271 +178,59 @@ def analyze_resume_file(file_path):
         print("PDF parse error:", e)
         text = ""
 
-    clean_text = text.lower()
-    
-    # 1. Contact Info Detection (15 pts max)
-    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', text)
-    phones = re.findall(r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', text)
-    has_email = len(emails) > 0
-    has_phone = len(phones) > 0
-    has_linkedin = "linkedin.com" in clean_text
-    has_github = "github.com" in clean_text
-    
-    contact_pts = 0
-    if has_email: contact_pts += 5
-    if has_phone: contact_pts += 4
-    if has_linkedin: contact_pts += 3
-    if has_github: contact_pts += 3
-    
-    # 2. Section Detection (25 pts max)
-    sections_found = []
-    sec_pts = 0
-    for sec in ["education", "experience", "projects", "skills", "certifications"]:
-        if sec in clean_text:
-            sections_found.append(sec.title())
-            sec_pts += 5
-            
-    # 3. Technical Skills Extraction (35 pts max)
-    skills_found = []
-    for kw in CORE_TECH_KEYWORDS:
-        if re.search(r'\b' + re.escape(kw) + r'\b', clean_text):
-            skills_found.append(kw.title())
-            
-    skills_found = list(dict.fromkeys(skills_found))
-    skills_pts = min(35, int((len(skills_found) / 10) * 35))
-    
-    recommended_skills = [
-        s for s in ["Python", "Selenium", "SQL", "React", "REST API", "Git", "PyTest", "Docker", "Postman", "CI/CD"]
-        if s.title() not in skills_found
-    ][:6]
-    
-    # 4. Action Verbs & Metrics (25 pts max)
-    verbs_found = []
-    for v in IMPACT_ACTION_VERBS:
-        if re.search(r'\b' + re.escape(v) + r'\b', clean_text):
-            verbs_found.append(v.title())
-    verbs_found = list(dict.fromkeys(verbs_found))
-    
-    metrics_match = re.findall(r'\d+%', text) + re.findall(r'\$\d+', text) + re.findall(r'\d+\s*(?:sec|seconds|ms|hours|x)', clean_text)
-    
-    verb_pts = min(15, len(verbs_found) * 3)
-    metric_pts = min(10, len(metrics_match) * 4)
-    impact_pts = verb_pts + metric_pts
-    
-    # Calculate Total ATS Score (Max 96)
-    raw_score = contact_pts + sec_pts + skills_pts + impact_pts
-    total_score = max(38, min(96, raw_score)) if len(text) > 80 else 25
-    
-    # Extracted candidate name
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    candidate_name = lines[0] if lines else "Candidate"
+    analysis = AIResumeAnalyzer.analyze_resume(text, job_description)
 
-    # ----------------- DETECT CRITICAL RED-FLAG MISTAKES -----------------
-    mistakes = []
-    
-    if not has_linkedin:
-        mistakes.append({
-            "title": "Missing LinkedIn Profile URL",
-            "desc": "Recruiters and ATS software prioritize candidates with verified LinkedIn URLs to validate employment history.",
-            "severity": "High"
-        })
-    if not has_github:
-        mistakes.append({
-            "title": "Missing GitHub / Portfolio Link",
-            "desc": "For software, QA, and web engineering roles, lack of a code repository severely lowers technical credibility.",
-            "severity": "High"
-        })
-    if len(metrics_match) == 0:
-        mistakes.append({
-            "title": "Zero Quantifiable Business Metrics Found",
-            "desc": "Your bullet points lack quantifiable proof (e.g. 'reduced testing time by 40%', 'improved speed by 2x'). ATS algorithms downgrade non-measurable claims.",
-            "severity": "Critical"
-        })
-    
-    # Detect weak passive words in text
-    detected_weak_words = [w for w in WEAK_PASSIVE_WORDS if w in clean_text]
-    if detected_weak_words:
-        mistakes.append({
-            "title": f"Weak Passive Phrasing Detected ('{detected_weak_words[0]}')",
-            "desc": "Replace passive phrases like 'worked on' or 'responsible for' with assertive action verbs like 'Engineered', 'Automated', or 'Spearheaded'.",
-            "severity": "Medium"
-        })
+    primary_skill = analysis["detected_skills"][0] if analysis["detected_skills"] else "Software"
+    second_skill = analysis["detected_skills"][1] if len(analysis["detected_skills"]) > 1 else "Engineer"
 
-    if "certifications" not in [s.lower() for s in sections_found]:
-        mistakes.append({
-            "title": "Missing Dedicated Certifications Section",
-            "desc": "ATS filters actively scan for credentials (e.g. Python, SQL, Agile, Selenium certifications). Add an explicit Certifications section.",
-            "severity": "Medium"
-        })
-
-    if len(skills_found) < 6:
-        mistakes.append({
-            "title": "Low Technical Keyword Density",
-            "desc": f"Your resume only has {len(skills_found)} recognizable tech keywords. Add missing industry standards like {', '.join(recommended_skills[:3])}.",
-            "severity": "Critical"
-        })
-
-    # AI Generated Professional Summary - PERSONALIZED from resume
-    primary_skill_str = ", ".join(skills_found[:5]) if skills_found else "modern software engineering"
-    if any(s.lower() in clean_text for s in ["selenium", "pytest", "qa", "quality", "testing", "test"]):
-        primary_role = "QA Automation & Test Engineer"
-        role_focus = "automated testing, quality assurance, and defect prevention"
-    elif any(s.lower() in clean_text for s in ["react", "node", "frontend", "backend", "full-stack", "fullstack"]):
-        primary_role = "Full-Stack Software Engineer"
-        role_focus = "end-to-end application development and scalable system design"
-    elif any(s.lower() in clean_text for s in ["data", "machine learning", "ml", "ai", "analytics", "pandas", "numpy"]):
-        primary_role = "Data & ML Engineer"
-        role_focus = "data pipelines, machine learning models, and analytical insights"
-    elif any(s.lower() in clean_text for s in ["devops", "docker", "kubernetes", "ci/cd", "jenkins", "aws", "azure"]):
-        primary_role = "DevOps & Cloud Engineer"
-        role_focus = "CI/CD automation, containerization, and cloud infrastructure"
-    else:
-        primary_role = "Software Engineer"
-        role_focus = "software development, system integration, and delivery excellence"
-
-    # Extract candidate's actual experience years if mentioned
-    exp_match = re.search(r'(\d+)\s*\+?\s*(?:years?|yrs?)\s*(?:of)?\s*experience', clean_text)
-    exp_str = f"{exp_match.group(1)}+ years of experience in" if exp_match else "hands-on experience in"
-
-    # Extract actual company/project names from resume for personalization
-    company_matches = re.findall(r'(?:at|@|with|for)\s+([A-Z][A-Za-z\s&]+(?:Ltd|Inc|Corp|Technologies|Solutions|Systems|Pvt)?)', text[:2000])
-    company_str = f" at organizations including {company_matches[0].strip()}" if company_matches else ""
-
-    summary_ai = (
-        f"Results-driven {primary_role} with {exp_str} {role_focus}. "
-        f"Proficient in {primary_skill_str}{company_str}. "
-        f"Demonstrated ability to deliver high-quality solutions, reduce production defects, and accelerate deployment cycles in Agile environments. "
-        f"Seeking to leverage technical expertise to drive measurable business impact."
-    )
-
-    # AI Bullet Point Transformation - extract REAL weak lines from the actual resume
-    # Find actual bullet points / experience lines that are weak/passive
-    resume_lines = [l.strip() for l in text.split('\n') if l.strip() and len(l.strip()) > 20]
-    
-    weak_line_found = None
-    for line in resume_lines:
-        line_lower = line.lower()
-        if any(w in line_lower for w in WEAK_PASSIVE_WORDS):
-            if len(line) < 200:  # reasonable bullet point length
-                weak_line_found = line.strip()
-                break
-
-    # If no weak line found, pick a real experience line and mark it as improvable
-    if not weak_line_found:
-        for line in resume_lines:
-            if len(line) > 30 and len(line) < 180 and not any(
-                skip in line.lower() for skip in ['email', 'phone', '@', 'linkedin', 'github', 'http', '|', 'education', 'experience', 'skills', 'projects']
-            ):
-                weak_line_found = line.strip()
-                break
-
-    before_bullet = weak_line_found if weak_line_found else f"Worked on {primary_skill_str.split(',')[0]} tasks for the project."
-
-    # Generate a strong ATS rewrite of that specific line
-    first_skill = skills_found[0] if skills_found else "Python"
-    second_skill = skills_found[1] if len(skills_found) > 1 else "automation"
-    
-    # Detect what kind of work they did from the weak line
-    weak_lower = before_bullet.lower()
-    if any(w in weak_lower for w in ["test", "qa", "selenium", "manual"]):
-        after_bullet = (f"Engineered end-to-end {first_skill} automated test suites covering {second_skill} workflows, "
-                       f"reducing manual QA effort by 60% and achieving 98% regression pass rate across 3 sprint cycles.")
-    elif any(w in weak_lower for w in ["develop", "build", "creat", "implement", "code"]):
-        after_bullet = (f"Architected and deployed scalable {first_skill} modules integrated with {second_skill}, "
-                       f"reducing bug backlog by 45% and accelerating feature delivery by 2 sprint cycles.")
-    elif any(w in weak_lower for w in ["manag", "lead", "coordin", "oversee"]):
-        after_bullet = (f"Spearheaded cross-functional {first_skill} initiative managing {second_skill} deliverables "
-                       f"across 5+ stakeholders, delivering 100% on-time with zero critical defects.")
-    elif any(w in weak_lower for w in ["data", "analy", "report", "dashboard"]):
-        after_bullet = (f"Designed and automated {first_skill} data pipeline processing 50K+ records daily using {second_skill}, "
-                       f"improving reporting accuracy by 35% and reducing manual effort by 4 hours/week.")
-    else:
-        after_bullet = (f"Engineered production-grade {first_skill} solution leveraging {second_skill} best practices, "
-                       f"improving system performance by 40% and reducing deployment time from 2 hours to 15 minutes.")
-
-    # Top tailored interview questions based on ACTUAL skills in resume
-    interview_questions = []
-    if len(skills_found) >= 1:
-        interview_questions.append(f"Walk me through a real project where you used {skills_found[0]} to solve a complex technical challenge. What was the impact?")
-    if len(skills_found) >= 2:
-        interview_questions.append(f"How have you integrated {skills_found[1]} with {skills_found[0] if skills_found else 'other tools'} in a production environment? What issues did you face?")
-    if any(s.lower() in clean_text for s in ["testing", "selenium", "qa", "pytest"]):
-        interview_questions.append("Describe your test strategy for a feature with no existing test coverage. How do you prioritize test cases?")
-    if any(s.lower() in clean_text for s in ["git", "github", "agile", "scrum", "jira"]):
-        interview_questions.append("How do you manage merge conflicts and code reviews in a team of 5+ developers? Walk me through your Git workflow.")
-    if any(s.lower() in clean_text for s in ["api", "rest", "postman", "microservices"]):
-        interview_questions.append(f"How do you validate and test REST APIs end-to-end? Give an example using {skills_found[0] if skills_found else 'your tools'}.")
-    if len(metrics_match) == 0:
-        interview_questions.append("Give a specific example where your work had a quantifiable business impact. What metric did you improve and by how much?")
-    if any(s.lower() in clean_text for s in ["docker", "aws", "azure", "kubernetes", "ci/cd"]):
-        interview_questions.append(f"Describe a CI/CD pipeline you built or improved. What tools did you use and what was the deployment frequency before vs. after?")
-    # Fill remaining to get 5 questions
-    fallbacks = [
-        "How do you keep your technical skills up to date? Share the last course or certification you completed.",
-        "Describe a time you identified and fixed a critical production bug under pressure. What was your debugging process?",
-        "How do you prioritize tasks when working on multiple deadlines simultaneously?",
-        "What is your experience with code reviews — as a reviewer and as a reviewee? How do you give constructive feedback?",
-    ]
-    for fb in fallbacks:
-        if len(interview_questions) >= 5:
-            break
-        interview_questions.append(fb)
-
-    # Generate 15 targeted live job links across Bangalore, Hyderabad & Remote
-    top_skill = skills_found[0] if skills_found else "Software"
-    second_skill = skills_found[1] if len(skills_found) > 1 else "Developer"
-    
     jobs_list = [
-        # Bangalore Jobs
-        {"title": f"{top_skill} Automation Engineer", "company": "Top MNC / Tech Product", "location": "Bangalore, India", "match": "95%", "url": f"https://www.linkedin.com/jobs/search/?keywords={top_skill}+Automation+Engineer&location=Bengaluru"},
-        {"title": f"Junior QA & Test Automation Specialist", "company": "Software Enterprise", "location": "Bangalore, India", "match": "92%", "url": f"https://www.linkedin.com/jobs/search/?keywords=QA+Automation+Engineer&location=Bengaluru"},
-        {"title": f"{top_skill} Software Engineer - Fresher / Associate", "company": "Global IT Services", "location": "Bangalore, India", "match": "90%", "url": f"https://www.linkedin.com/jobs/search/?keywords={top_skill}+Engineer+Fresher&location=Bengaluru"},
-        {"title": f"Associate Full-Stack Developer ({second_skill})", "company": "High-Growth Startup", "location": "Bangalore, India", "match": "88%", "url": f"https://www.linkedin.com/jobs/search/?keywords=Associate+Software+Engineer&location=Bengaluru"},
-        {"title": "SDET / Automation Test Engineer", "company": "Cloud SaaS Company", "location": "Bangalore, India", "match": "87%", "url": f"https://www.linkedin.com/jobs/search/?keywords=SDET&location=Bengaluru"},
-
-        # Hyderabad Jobs
-        {"title": f"{top_skill} Developer & Scripting Specialist", "company": "Global Technology Center", "location": "Hyderabad, India", "match": "94%", "url": f"https://www.linkedin.com/jobs/search/?keywords={top_skill}+Developer&location=Hyderabad"},
-        {"title": "Software Test Engineer (Selenium / BDD)", "company": "Enterprise Solutions", "location": "Hyderabad, India", "match": "93%", "url": f"https://www.linkedin.com/jobs/search/?keywords=Selenium+QA+Engineer&location=Hyderabad"},
-        {"title": f"Associate Engineer - {second_skill} / Python", "company": "IT Consulting Firm", "location": "Hyderabad, India", "match": "91%", "url": f"https://www.linkedin.com/jobs/search/?keywords=Associate+Engineer&location=Hyderabad"},
-        {"title": "Web Application QA Tester", "company": "Digital Solutions", "location": "Hyderabad, India", "match": "89%", "url": f"https://www.linkedin.com/jobs/search/?keywords=Software+QA+Tester&location=Hyderabad"},
-        {"title": "Junior Python Automation Analyst", "company": "FinTech Systems", "location": "Hyderabad, India", "match": "88%", "url": f"https://www.linkedin.com/jobs/search/?keywords=Python+Automation&location=Hyderabad"},
-
-        # Remote Jobs (India & Global)
-        {"title": f"Remote {top_skill} Engineer", "company": "Remote First Company", "location": "Remote (Work From Home)", "match": "96%", "url": f"https://www.linkedin.com/jobs/search/?keywords={top_skill}+Remote&f_WT=2"},
-        {"title": "Junior QA Automation Engineer (Remote)", "company": "SaaS Platform", "location": "Remote (India)", "match": "93%", "url": "https://www.linkedin.com/jobs/search/?keywords=QA+Automation+Remote&f_WT=2"},
-        {"title": f"Freelance / Contract {top_skill} Developer", "company": "Digital Agency", "location": "Remote", "match": "90%", "url": f"https://www.linkedin.com/jobs/search/?keywords={top_skill}+Contract&f_WT=2"},
-        {"title": "Software Engineering Trainee (Remote)", "company": "Tech Accelerator", "location": "Remote", "match": "89%", "url": "https://www.linkedin.com/jobs/search/?keywords=Software+Trainee+Remote&f_WT=2"},
-        {"title": "Full-Stack Automation Trainee", "company": "Global Solutions", "location": "Remote", "match": "86%", "url": f"https://www.linkedin.com/jobs/search/?keywords={second_skill}+Developer+Remote&f_WT=2"}
+        {"title": f"{primary_skill} Test Automation Engineer", "company": "Tech Product & Consulting", "location": "Bangalore, India", "match": "95%", "url": f"https://www.linkedin.com/jobs/search/?keywords={primary_skill}+Automation+Engineer&location=Bengaluru"},
+        {"title": f"Quality Assurance & {second_skill} Specialist", "company": "Enterprise Software", "location": "Bangalore, India", "match": "92%", "url": f"https://www.linkedin.com/jobs/search/?keywords=QA+{second_skill}&location=Bengaluru"},
+        {"title": f"Associate {primary_skill} Developer", "company": "Global Technology Hub", "location": "Bangalore, India", "match": "90%", "url": f"https://www.linkedin.com/jobs/search/?keywords={primary_skill}+Developer&location=Bengaluru"},
+        {"title": f"{primary_skill} Systems Specialist", "company": "IT Solutions", "location": "Hyderabad, India", "match": "94%", "url": f"https://www.linkedin.com/jobs/search/?keywords={primary_skill}+Developer&location=Hyderabad"},
+        {"title": f"SDET Automation Engineer ({second_skill})", "company": "FinTech Innovations", "location": "Hyderabad, India", "match": "91%", "url": f"https://www.linkedin.com/jobs/search/?keywords=SDET+{second_skill}&location=Hyderabad"},
+        {"title": f"Remote {primary_skill} Engineer", "company": "Cloud SaaS Distributed", "location": "Remote (Work From Home)", "match": "96%", "url": f"https://www.linkedin.com/jobs/search/?keywords={primary_skill}+Remote&f_WT=2"}
     ]
 
     breakdown = {
-        "contact_pts": contact_pts,
-        "sec_pts": sec_pts,
-        "skills_pts": skills_pts,
-        "impact_pts": impact_pts,
-        "has_email": has_email,
-        "has_phone": has_phone,
-        "has_linkedin": has_linkedin,
-        "has_github": has_github,
-        "sections_detected": sections_found,
-        "metrics_detected": len(metrics_match) > 0,
-        "summary_ai": summary_ai,
-        "before_bullet": before_bullet,
-        "after_bullet": after_bullet,
-        "interview_questions": interview_questions,
+        "contact_pts": analysis["contact_score"],
+        "sec_pts": analysis["struct_score"],
+        "skills_pts": analysis["skills_score"],
+        "impact_pts": analysis["evidence_score"],
+        "resume_quality_score": analysis["resume_quality_score"],
+        "formatting_score": analysis["formatting_score"],
+        "sections_detected": analysis["sections_detected"],
+        "metrics_detected": len(analysis["metrics_found"]) > 0,
+        "summary_ai": analysis["ai_summary"],
+        "ai_summary": analysis["ai_summary"],
+        "before_bullet": analysis["before_bullet"],
+        "after_bullet": analysis["after_bullet"],
+        "interview_questions": analysis["interview_questions"],
+        "recommendations": analysis["recommendations"],
+        "deductions": analysis["deductions"],
+        "optimized_sections": analysis["optimized_sections"],
+        "is_ai_powered": analysis["is_ai_powered"],
         "jobs_list": jobs_list
     }
 
+    mistakes = []
+    for d in analysis["deductions"]:
+        mistakes.append({
+            "title": d["item"],
+            "desc": d["reason"],
+            "severity": "Critical" if abs(d["points"]) >= 8 else "Medium"
+        })
+
     return {
-        "candidate_name": candidate_name[:60],
-        "email": emails[0] if emails else "",
-        "phone": phones[0] if phones else "",
-        "score": total_score,
-        "skills_found": skills_found,
-        "missing_skills": recommended_skills,
-        "action_verbs": verbs_found,
-        "sections_found": sections_found,
-        "resume_text": text.strip()[:4000], # clean preview
+        "candidate_name": analysis["candidate_name"][:60],
+        "email": analysis["email"],
+        "phone": analysis["phone"],
+        "score": analysis["score"],
+        "skills_found": analysis["detected_skills"],
+        "missing_skills": analysis["missing_skills"],
+        "action_verbs": analysis["action_verbs"],
+        "sections_found": analysis["sections_detected"],
+        "resume_text": text.strip()[:4000],
         "mistakes": mistakes,
         "breakdown": breakdown
     }
@@ -628,8 +419,10 @@ def scan():
     file_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(file_path)
 
+    job_description = request.form.get("job_description", "").strip()
+
     # Perform ATS Analysis
-    result = analyze_resume_file(file_path)
+    result = analyze_resume_file(file_path, job_description)
 
     # Determine unlock status:
     # 1. Active subscription → always unlocked (no credit used)
@@ -652,14 +445,14 @@ def scan():
         INSERT INTO scans (
             user_id, filename, candidate_name, email, phone, score,
             skills_found, missing_skills, action_verbs, sections_found,
-            resume_text, mistakes_json, breakdown_json, is_free, payment_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            resume_text, mistakes_json, breakdown_json, is_free, payment_status, job_description
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         user["id"], filename, result["candidate_name"], result["email"], result["phone"],
         result["score"], ", ".join(result["skills_found"]), ", ".join(result["missing_skills"]),
         ", ".join(result["action_verbs"]), ", ".join(result["sections_found"]),
         result["resume_text"], json.dumps(result["mistakes"]), json.dumps(result["breakdown"]),
-        is_free_scan, pay_status
+        is_free_scan, pay_status, job_description
     ))
     scan_id = cursor.lastrowid
 
@@ -718,6 +511,80 @@ def view_report(scan_id):
         has_subscription=has_subscription,
         subscription_info=subscription_info
     )
+
+@app.route("/report/<int:scan_id>/download-pdf")
+def download_pdf_report(scan_id):
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    scan = conn.execute("SELECT * FROM scans WHERE id = ? AND user_id = ?", (scan_id, user["id"])).fetchone()
+    conn.close()
+
+    if not scan:
+        flash("Scan record not found.", "error")
+        return redirect(url_for("dashboard"))
+
+    has_subscription = user_has_active_subscription(user)
+    is_unlocked = (scan["is_free"] == 1) or (scan["payment_status"] == "verified") or has_subscription
+
+    if not is_unlocked:
+        flash("Please unlock the report with payment or subscription before downloading PDF.", "error")
+        return redirect(url_for("view_report", scan_id=scan_id))
+
+    breakdown = json.loads(scan["breakdown_json"]) if scan["breakdown_json"] else {}
+    pdf_bytes = generate_ats_report_pdf(dict(scan), breakdown)
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment;filename=SkillBoost_ATS_Report_{scan_id}.pdf"}
+    )
+
+@app.route("/api/rewrite-section", methods=["POST"])
+def api_rewrite_section():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.json or {}
+    scan_id = data.get("scan_id")
+    section_name = data.get("section", "summary")
+    original_text = data.get("original_text", "").strip()
+
+    conn = get_db()
+    scan = conn.execute("SELECT * FROM scans WHERE id = ? AND user_id = ?", (scan_id, user["id"])).fetchone()
+    conn.close()
+
+    if not scan:
+        return jsonify({"error": "Scan not found"}), 404
+
+    has_subscription = user_has_active_subscription(user)
+    is_unlocked = (scan["is_free"] == 1) or (scan["payment_status"] == "verified") or has_subscription
+
+    if not is_unlocked:
+        return jsonify({"error": "Premium subscription required for AI Rewriter."}), 403
+
+    breakdown = json.loads(scan["breakdown_json"]) if scan["breakdown_json"] else {}
+    opt = breakdown.get("optimized_sections", {})
+
+    if section_name == "summary":
+        rewritten = opt.get("summary") or "Results-oriented Software Engineer specializing in automated testing, full-stack software development, and CI/CD pipelines."
+    elif section_name == "experience":
+        rewritten = opt.get("experience_bullet") or "Engineered automated test frameworks and performance-critical modules, decreasing test cycles by 60% and eliminating defect escapes."
+    elif section_name == "project":
+        rewritten = opt.get("project_description") or "Designed and deployed enterprise automation microservices with automated telemetry, achieving 99.9% uptime SLA."
+    else:
+        rewritten = f"Spearheaded technical implementation utilizing {scan['skills_found']}, increasing system throughput by 35%."
+
+    return jsonify({
+        "success": True,
+        "section": section_name,
+        "original": original_text,
+        "rewritten": rewritten,
+        "boosted_score": 98
+    })
 
 @app.route("/submit-payment", methods=["POST"])
 def submit_payment():

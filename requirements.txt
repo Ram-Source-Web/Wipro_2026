@@ -1,2 +1,5 @@
 flask
 pypdf
+requests
+reportlab
+python-dotenv

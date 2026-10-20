@@ -5,7 +5,7 @@ import sqlite3
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_from_directory, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from pypdf import PdfReader
@@ -100,6 +100,16 @@ def init_db():
     ]:
         try:
             cursor.execute(f"ALTER TABLE scans ADD COLUMN {col} {col_type};")
+        except Exception:
+            pass
+
+    # User table migrations — subscription system
+    for col, col_type in [
+        ("subscription_expires", "TEXT"),
+        ("subscription_plan", "TEXT DEFAULT 'free'"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type};")
         except Exception:
             pass
 
@@ -442,7 +452,6 @@ def send_owner_alert(subject, body_html):
         sender_password = os.environ.get("ALERT_EMAIL_PASS", "")
         
         if not sender_email or not sender_password:
-            # Silently skip if email creds not set — don't break the app
             print(f"[ALERT - no email creds] {subject}: {body_html[:200]}")
             return False
             
@@ -459,6 +468,32 @@ def send_owner_alert(subject, body_html):
     except Exception as e:
         print(f"[EMAIL ALERT ERROR] {e}")
         return False
+
+def user_has_active_subscription(user):
+    """Check if user has a valid (non-expired) paid subscription."""
+    if not user:
+        return False
+    try:
+        expires = user["subscription_expires"]
+        if expires:
+            exp_date = datetime.strptime(expires, "%Y-%m-%d %H:%M:%S")
+            return datetime.now() < exp_date
+    except Exception:
+        pass
+    return False
+
+def get_subscription_expiry_str(user):
+    """Return a human-readable expiry string."""
+    try:
+        expires = user["subscription_expires"]
+        if expires:
+            exp_date = datetime.strptime(expires, "%Y-%m-%d %H:%M:%S")
+            if datetime.now() < exp_date:
+                days_left = (exp_date - datetime.now()).days
+                return f"{exp_date.strftime('%d %b %Y')} ({days_left} days left)"
+    except Exception:
+        pass
+    return None
 
 
 def get_current_user():
@@ -564,7 +599,11 @@ def dashboard():
     scans = conn.execute("SELECT * FROM scans WHERE user_id = ? ORDER BY id DESC", (user["id"],)).fetchall()
     conn.close()
 
-    return render_template("dashboard.html", user=user, scans=scans)
+    has_subscription = user_has_active_subscription(user)
+    subscription_info = get_subscription_expiry_str(user) if has_subscription else None
+
+    return render_template("dashboard.html", user=user, scans=scans, 
+                          has_subscription=has_subscription, subscription_info=subscription_info)
 
 @app.route("/scan", methods=["POST"])
 def scan():
@@ -583,6 +622,7 @@ def scan():
         return jsonify({"error": "Only PDF files are supported."}), 400
 
     has_free_credit = user["free_credits"] > 0
+    has_subscription = user_has_active_subscription(user)
 
     filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
     file_path = os.path.join(UPLOAD_FOLDER, filename)
@@ -590,6 +630,20 @@ def scan():
 
     # Perform ATS Analysis
     result = analyze_resume_file(file_path)
+
+    # Determine unlock status:
+    # 1. Active subscription → always unlocked (no credit used)
+    # 2. Free credit available → unlocked (credit deducted)
+    # 3. Neither → locked (needs payment)
+    if has_subscription:
+        is_free_scan = 0
+        pay_status = "verified"   # auto-unlocked via subscription
+    elif has_free_credit:
+        is_free_scan = 1
+        pay_status = "free"
+    else:
+        is_free_scan = 0
+        pay_status = "unpaid"
 
     conn = get_db()
     cursor = conn.cursor()
@@ -605,12 +659,11 @@ def scan():
         result["score"], ", ".join(result["skills_found"]), ", ".join(result["missing_skills"]),
         ", ".join(result["action_verbs"]), ", ".join(result["sections_found"]),
         result["resume_text"], json.dumps(result["mistakes"]), json.dumps(result["breakdown"]),
-        1 if has_free_credit else 0,
-        "free" if has_free_credit else "unpaid"
+        is_free_scan, pay_status
     ))
     scan_id = cursor.lastrowid
 
-    if has_free_credit:
+    if has_free_credit and not has_subscription:
         cursor.execute("UPDATE users SET free_credits = free_credits - 1 WHERE id = ?", (user["id"],))
 
     conn.commit()
@@ -645,7 +698,12 @@ def view_report(scan_id):
     verbs_list = [v.strip() for v in scan["action_verbs"].split(",") if v.strip()]
     
     jobs_list = breakdown.get("jobs_list", [])
-    is_unlocked = (scan["is_free"] == 1) or (scan["payment_status"] == "verified")
+    
+    # Unlock logic: free scan OR verified payment OR active subscription
+    has_subscription = user_has_active_subscription(user)
+    is_unlocked = (scan["is_free"] == 1) or (scan["payment_status"] == "verified") or has_subscription
+    
+    subscription_info = get_subscription_expiry_str(user) if has_subscription else None
 
     return render_template(
         "report.html",
@@ -656,7 +714,9 @@ def view_report(scan_id):
         missing_list=missing_list,
         verbs_list=verbs_list,
         jobs_list=jobs_list,
-        is_unlocked=is_unlocked
+        is_unlocked=is_unlocked,
+        has_subscription=has_subscription,
+        subscription_info=subscription_info
     )
 
 @app.route("/submit-payment", methods=["POST"])
@@ -853,10 +913,41 @@ def admin_verify_payment(scan_id):
         return redirect(url_for("admin_login"))
 
     conn = get_db()
+    # Mark this scan as verified
     conn.execute("UPDATE scans SET payment_status = 'verified' WHERE id = ?", (scan_id,))
+    
+    # Get the user who owns this scan and give them 1 YEAR subscription
+    scan = conn.execute("SELECT user_id FROM scans WHERE id = ?", (scan_id,)).fetchone()
+    if scan:
+        user_id = scan["user_id"]
+        # Check if user already has an active subscription — extend it, don't replace
+        user = conn.execute("SELECT subscription_expires FROM users WHERE id = ?", (user_id,)).fetchone()
+        
+        now = datetime.now()
+        try:
+            existing_exp = datetime.strptime(user["subscription_expires"], "%Y-%m-%d %H:%M:%S") if user and user["subscription_expires"] else None
+        except Exception:
+            existing_exp = None
+        
+        # If existing subscription is still active, add 1 year from its expiry
+        # Otherwise start 1 year from today
+        if existing_exp and existing_exp > now:
+            new_expiry = existing_exp + timedelta(days=365)
+        else:
+            new_expiry = now + timedelta(days=365)
+        
+        expiry_str = new_expiry.strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("UPDATE users SET subscription_expires = ?, subscription_plan = 'premium_1yr' WHERE id = ?", 
+                     (expiry_str, user_id))
+        
+        # Also auto-verify ALL unpaid scans for this user (so old locked scans unlock too)
+        conn.execute("UPDATE scans SET payment_status = 'verified' WHERE user_id = ? AND payment_status IN ('unpaid', 'pending')", 
+                     (user_id,))
+        
+        flash(f"✅ Scan #{scan_id} verified! User #{user_id} now has Premium subscription until {new_expiry.strftime('%d %b %Y')}. All their scans are unlocked.", "success")
+    
     conn.commit()
     conn.close()
-    flash(f"Scan #{scan_id} payment verified and report unlocked!", "success")
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/grant-credit/<int:user_id>", methods=["POST"])

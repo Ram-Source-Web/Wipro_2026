@@ -12,7 +12,20 @@
       <p class="text-xs sm:text-sm text-slate-400 mt-1">Upload your resume to calculate your ATS score and get customized LinkedIn job recommendations.</p>
     </div>
 
-    <!-- Credits Badge -->
+    <!-- Credits / Subscription Badge -->
+    {% if has_subscription %}
+    <div class="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg">
+        <i class="fa-solid fa-crown"></i>
+      </div>
+      <div>
+        <div class="text-[11px] font-mono uppercase tracking-wider text-slate-400">Premium Subscription</div>
+        <div class="text-base font-extrabold text-white">
+          <span class="text-emerald-400">✅ Unlimited Scans</span> <span class="text-xs text-slate-400">until {{ subscription_info }}</span>
+        </div>
+      </div>
+    </div>
+    {% else %}
     <div class="p-4 rounded-2xl {% if user.free_credits > 0 %}bg-emerald-500/10 border border-emerald-500/30 text-emerald-300{% else %}bg-amber-500/10 border border-amber-500/30 text-amber-300{% endif %} flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl {% if user.free_credits > 0 %}bg-emerald-500/20 text-emerald-400{% else %}bg-amber-500/20 text-amber-400{% endif %} flex items-center justify-center text-lg">
         <i class="fa-solid {% if user.free_credits > 0 %}fa-gift{% else %}fa-coins{% endif %}"></i>
@@ -23,11 +36,12 @@
           {% if user.free_credits > 0 %}
             <span class="text-emerald-400">{{ user.free_credits }} Free Scan Available</span>
           {% else %}
-            <span class="text-amber-400">0 Free Credits</span> <span class="text-xs text-slate-400">(₹{{ price_inr }}/scan)</span>
+            <span class="text-amber-400">0 Free Credits</span> <span class="text-xs text-slate-400">(Pay ₹{{ price_inr }} for 1 Year Unlimited Scans)</span>
           {% endif %}
         </div>
       </div>
     </div>
+    {% endif %}
   </div>
 
   <!-- Drag & Drop Upload Section -->

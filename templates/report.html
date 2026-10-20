@@ -24,6 +24,12 @@
           <i class="fa-solid fa-chart-simple"></i>
           <span>Comprehensive ATS Analysis</span>
         </div>
+        {% if has_subscription %}
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold ml-2">
+          <i class="fa-solid fa-crown"></i>
+          <span>Premium Subscriber — Unlimited Scans until {{ subscription_info }}</span>
+        </div>
+        {% endif %}
         <h1 class="text-2xl sm:text-3xl font-extrabold text-white">{{ scan.candidate_name or "Resume Candidate" }}</h1>
         <p class="text-xs sm:text-sm text-slate-400">
           Evaluated against modern Applicant Tracking System parsers (keyword density, section hierarchy, quantifiable impact metrics, and contact structure).
@@ -327,7 +333,8 @@
         <p class="text-xs sm:text-sm text-slate-300">
           Your ATS score, detected keywords, missing skills, AI bullet rewrites, professional summary, interview prep & 15+ LinkedIn job matches are locked.
         </p>
-        <p class="text-sm font-bold text-amber-400">Pay just <span class="text-2xl text-emerald-400">₹{{ price_inr }}</span> to unlock everything instantly.</p>
+        <p class="text-sm font-bold text-amber-400">Pay just <span class="text-2xl text-emerald-400">₹{{ price_inr }}</span> for <span class="text-emerald-400 underline">1 Year Unlimited Scans</span></p>
+        <p class="text-[11px] text-slate-400">One payment → scan unlimited resumes for 365 days. No per-scan charges ever.</p>
       </div>
 
       <!-- What's locked preview -->

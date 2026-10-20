@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+
+{% block title %}ATS Report: {{ scan.candidate_name }} | SkillBoost ATS{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8 space-y-10">
+
+  <!-- Breadcrumbs & Back -->
+  <div class="flex items-center justify-between">
+    <a href="/dashboard" class="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
+      <i class="fa-solid fa-arrow-left"></i>
+      <span>Back to Dashboard</span>
+    </a>
+    <span class="text-xs font-mono text-slate-500">Scanned on: {{ scan.created_at[:16] }}</span>
+  </div>
+
+  <!-- Score Summary Hero Card -->
+  <div class="p-6 sm:p-8 rounded-3xl bg-dark-card border border-dark-border shadow-2xl">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+      
+      <!-- Left info -->
+      <div class="md:col-span-8 space-y-3">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+          <i class="fa-solid fa-chart-simple"></i>
+          <span>Comprehensive ATS Analysis</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-white">{{ scan.candidate_name or "Resume Candidate" }}</h1>
+        <p class="text-xs sm:text-sm text-slate-400">
+          Evaluated against modern Applicant Tracking System parsers (keyword density, section hierarchy, quantifiable impact metrics, and contact structure).
+        </p>
+
+        <div class="pt-2 flex flex-wrap gap-4 text-xs font-mono text-slate-400">
+          <span><i class="fa-regular fa-envelope text-cyan-400 mr-1"></i> {{ scan.email or "No Email Found" }}</span>
+          <span><i class="fa-solid fa-phone text-emerald-400 mr-1"></i> {{ scan.phone or "No Phone Found" }}</span>
+        </div>
+      </div>
+
+      <!-- Right Score Circle Gauge -->
+      <div class="md:col-span-4 flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-900/60 border border-slate-800 text-center">
+        <span class="text-xs font-mono text-slate-400 uppercase tracking-widest mb-1">Overall ATS Score</span>
+        <div class="text-5xl font-black font-mono {% if scan.score >= 75 %}text-emerald-400{% elif scan.score >= 50 %}text-amber-400{% else %}text-red-400{% endif %}">
+          {{ scan.score }}%
+        </div>
+        <span class="text-xs font-semibold mt-2 {% if scan.score >= 75 %}text-emerald-400{% elif scan.score >= 50 %}text-amber-400{% else %}text-red-400{% endif %}">
+          {% if scan.score >= 75 %}Strong ATS Compatibility{% elif scan.score >= 50 %}Moderate — Optimization Needed{% else %}High Rejection Risk{% endif %}
+        </span>
+        <p class="text-[10px] text-slate-500 mt-2 italic">
+          *Calculated based on automated parser rules. Score does not guarantee interview shortlisting.
+        </p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Score Calculation Breakdown -->
+  <div class="p-6 sm:p-8 rounded-3xl bg-dark-card border border-dark-border space-y-4">
+    <h3 class="text-base font-bold text-white"><i class="fa-solid fa-calculator text-cyan-400 mr-2"></i> How Your Score is Calculated</h3>
+    
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2">
+      <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center justify-between text-xs font-mono mb-1">
+          <span class="text-slate-400">Contact Info</span>
+          <span class="text-cyan-400 font-bold">{{ breakdown.contact_pts or 0 }}/15 pts</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Email, Phone, LinkedIn & GitHub detection.</p>
+      </div>
+
+      <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center justify-between text-xs font-mono mb-1">
+          <span class="text-slate-400">Structure</span>
+          <span class="text-indigo-400 font-bold">{{ breakdown.sec_pts or 0 }}/25 pts</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Education, Experience, Projects, Skills sections.</p>
+      </div>
+
+      <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center justify-between text-xs font-mono mb-1">
+          <span class="text-slate-400">Tech Keywords</span>
+          <span class="text-purple-400 font-bold">{{ breakdown.skills_pts or 0 }}/35 pts</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Breadth of tools, frameworks, and languages.</p>
+      </div>
+
+      <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center justify-between text-xs font-mono mb-1">
+          <span class="text-slate-400">Action Verbs</span>
+          <span class="text-emerald-400 font-bold">{{ breakdown.impact_pts or 0 }}/25 pts</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Quantifiable impact metrics (%) and power verbs.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDE-BY-SIDE: RESUME CONTENT vs CRITICAL MISTAKES IN RED -->
+  <div class="space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold text-white flex items-center gap-2">
+        <i class="fa-solid fa-magnifying-glass-chart text-cyan-400"></i>
+        <span>Side-by-Side Resume & Mistake Diagnostic</span>
+      </h3>
+      <span class="text-xs font-mono text-red-400 font-semibold">{{ mistakes|length }} Critical Flags Detected</span>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- Left: Uploaded Resume Content Preview -->
+      <div class="lg:col-span-6 p-6 rounded-3xl bg-dark-card border border-dark-border space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-slate-300 font-bold flex items-center gap-2">
+            <i class="fa-solid fa-file-lines text-indigo-400"></i>
+            <span>Uploaded Resume Content</span>
+          </h4>
+          <span class="text-[11px] font-mono text-slate-500">Parsed Text</span>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 max-h-[500px] overflow-y-auto font-mono text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap selection:bg-cyan-500 selection:text-black">
+{{ scan.resume_text or "No text could be extracted from this PDF. Ensure it is not an image-only scan." }}
+        </div>
+      </div>
+
+      <!-- Right: Mistakes in Red Color -->
+      <div class="lg:col-span-6 p-6 rounded-3xl bg-dark-card border border-red-500/30 space-y-3 shadow-lg shadow-red-950/20">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-red-400 font-bold flex items-center gap-2">
+            <i class="fa-solid fa-triangle-exclamation text-red-400"></i>
+            <span>Mistakes & Flaws Detected (In Red)</span>
+          </h4>
+          <span class="px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-mono">Action Required</span>
+        </div>
+
+        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+          {% for m in mistakes %}
+            <div class="p-4 rounded-2xl bg-red-500/5 border border-red-500/25 space-y-1.5 hover:border-red-500/40 transition-colors">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                  <i class="fa-solid fa-circle-xmark text-red-400"></i>
+                  <span>{{ m.title }}</span>
+                </span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold {% if m.severity == 'Critical' %}bg-red-500/20 text-red-300 border border-red-500/40{% else %}bg-amber-500/10 text-amber-300 border border-amber-500/30{% endif %}">
+                  {{ m.severity }}
+                </span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed font-sans">
+                {{ m.desc }}
+              </p>
+            </div>
+          {% else %}
+            <div class="p-6 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-center text-xs text-emerald-300">
+              <i class="fa-solid fa-circle-check text-lg mb-2 block"></i>
+              No major formatting or keyword mistakes were flagged!
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Skills Detected vs Recommended Missing Keywords -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    
+    <!-- Skills Found -->
+    <div class="p-6 rounded-3xl bg-dark-card border border-dark-border space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h4 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-circle-check text-emerald-400"></i>
+          <span>Detected Technical Keywords ({{ skills_list|length }})</span>
+        </h4>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {% for skill in skills_list %}
+          <span class="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-mono">
+            {{ skill }}
+          </span>
+        {% else %}
+          <span class="text-xs text-slate-500">No technical keywords detected.</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Missing High-Value Recommendations -->
+    <div class="p-6 rounded-3xl bg-dark-card border border-dark-border space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h4 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-plus text-amber-400"></i>
+          <span>Recommended Missing Keywords</span>
+        </h4>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {% for missing in missing_list %}
+          <span class="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-mono">
+            + {{ missing }}
+          </span>
+        {% else %}
+          <span class="text-xs text-slate-500">Your resume covers the key industry terms!</span>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- UNLOCKED PREMIUM AI & LINKEDIN 15-20 MATCHED JOBS -->
+  {% if is_unlocked %}
+    
+    <!-- AI Rewrite Section -->
+    <div class="p-6 sm:p-8 rounded-3xl bg-dark-card border border-indigo-500/40 shadow-2xl space-y-8">
+      
+      <div class="border-b border-slate-800 pb-4">
+        <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-mono font-semibold">Unlocked AI Features</span>
+        <h3 class="text-xl font-bold text-white mt-1">AI Resume Optimizer & Bullet Point Rewriter</h3>
+      </div>
+
+      <!-- AI Professional Summary -->
+      <div class="space-y-2">
+        <h4 class="text-xs font-mono uppercase tracking-wider text-cyan-400">AI-Generated Professional Summary (Copy to Resume):</h4>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
+          {{ breakdown.summary_ai or "Professional Software Engineer experienced in development and automated testing." }}
+        </div>
+      </div>
+
+      <!-- AI Bullet Point Transformation (Before vs After) -->
+      <div class="space-y-3">
+        <h4 class="text-xs font-mono uppercase tracking-wider text-indigo-400">AI Bullet Point Impact Rewrite:</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="p-4 rounded-2xl bg-red-500/5 border border-red-500/20 space-y-1">
+            <span class="text-[11px] font-mono text-red-400 font-bold uppercase">❌ Before (Weak / Passive):</span>
+            <p class="text-xs text-slate-300">{{ breakdown.before_bullet }}</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
+            <span class="text-[11px] font-mono text-emerald-400 font-bold uppercase">✅ After (High-Impact ATS Format):</span>
+            <p class="text-xs text-emerald-200 font-medium">{{ breakdown.after_bullet }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top 5 Interview Questions Generator -->
+      <div class="space-y-3">
+        <h4 class="text-xs font-mono uppercase tracking-wider text-purple-400">Tailored Technical Interview Questions to Prepare For:</h4>
+        <ul class="space-y-2">
+          {% for q in breakdown.interview_questions %}
+            <li class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+              <span class="text-purple-400 font-bold font-mono">Q{{ loop.index }}.</span>
+              <span>{{ q }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- 10 TO 20 LINKEDIN LIVE JOB MATCHES BY LOCATION -->
+    <div class="p-6 sm:p-8 rounded-3xl bg-dark-card border border-cyan-500/30 shadow-2xl space-y-6">
+      
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+        <div>
+          <span class="text-xs font-mono uppercase tracking-wider text-cyan-400 font-bold">Smart Career Matcher</span>
+          <h3 class="text-xl font-bold text-white mt-0.5">Matched Live Jobs on LinkedIn ({{ jobs_list|length }} Opportunities)</h3>
+          <p class="text-xs text-slate-400 mt-1">Curated live job postings matching your detected skills in Bangalore, Hyderabad, and Remote.</p>
+        </div>
+        <span class="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-mono">
+          <i class="fa-solid fa-location-dot mr-1"></i> Top Tech Hubs
+        </span>
+      </div>
+
+      <!-- Jobs Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for job in jobs_list %}
+          <div class="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-4 group">
+            
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold">
+                  {{ job.match }} Match
+                </span>
+                <span class="text-[11px] font-mono text-slate-400">
+                  <i class="fa-solid fa-location-dot text-red-400 mr-1"></i> {{ job.location }}
+                </span>
+              </div>
+
+              <h4 class="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors line-clamp-2">
+                {{ job.title }}
+              </h4>
+              <p class="text-xs text-slate-400 font-medium">{{ job.company }}</p>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800">
+              <a href="{{ job.url }}" target="_blank" class="w-full py-2 px-3 rounded-xl bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                <i class="fa-brands fa-linkedin text-sm"></i>
+                <span>Apply on LinkedIn ↗</span>
+              </a>
+            </div>
+
+          </div>
+        {% endfor %}
+      </div>
+
+    </div>
+
+  {% else %}
+    <!-- Locked Paywall Box (For 2nd scan onwards) -->
+    <div class="p-8 rounded-3xl bg-gradient-to-b from-indigo-950/40 to-slate-900 border border-indigo-500/40 text-center space-y-6">
+      <div class="w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto text-xl">
+        <i class="fa-solid fa-lock"></i>
+      </div>
+
+      <div class="max-w-lg mx-auto">
+        <h3 class="text-xl sm:text-2xl font-extrabold text-white">Unlock Full AI Optimization & 15+ LinkedIn Job Matches</h3>
+        <p class="text-xs sm:text-sm text-slate-300 mt-2">
+          You have used your 1 free scan credit. Unlock complete AI bullet-point rewrites, professional summary, tailored interview prep, and direct LinkedIn job navigation across Bangalore, Hyderabad & Remote for just <strong>₹{{ price_inr }}</strong>.
+        </p>
+      </div>
+
+      <!-- UPI QR Code & Instructions -->
+      <div class="p-5 rounded-2xl bg-black/60 border border-slate-800 inline-block mx-auto text-center">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=upi://pay?pa={{ upi_id }}&pn=RamBandaru&am={{ price_inr }}&cu=INR" alt="UPI QR Code" class="mx-auto rounded-xl mb-3 shadow-lg">
+        <p class="text-xs font-mono text-cyan-300 font-bold">UPI ID: {{ upi_id }}</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Scan via Google Pay, PhonePe, or Paytm</p>
+      </div>
+
+      <div class="max-w-xs mx-auto space-y-3">
+        <input type="text" id="txn-input" placeholder="Enter 12-digit UPI UTR / Transaction ID" class="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white text-center focus:outline-none focus:border-cyan-400 font-mono">
+        <button id="submit-pay-btn" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-lg">
+          Submit Payment for Instant Verification
+        </button>
+        <p id="pay-status-msg" class="text-xs text-amber-400 hidden"></p>
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const payBtn = document.getElementById('submit-pay-btn');
+  if (payBtn) {
+    payBtn.addEventListener('click', async () => {
+      const txn = document.getElementById('txn-input').value.trim();
+      const statusMsg = document.getElementById('pay-status-msg');
+      if (!txn) {
+        alert('Please enter your 12-digit Transaction / UTR ID.');
+        return;
+      }
+
+      payBtn.disabled = true;
+      payBtn.textContent = 'Submitting...';
+
+      try {
+        const res = await fetch('/submit-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scan_id: {{ scan.id }}, txn_id: txn })
+        });
+        const data = await res.json();
+        
+        statusMsg.textContent = data.message || data.error;
+        statusMsg.classList.remove('hidden');
+        payBtn.textContent = 'Submitted!';
+      } catch (err) {
+        alert('Error connecting to server. Please try again.');
+        payBtn.disabled = false;
+        payBtn.textContent = 'Submit Payment for Instant Verification';
+      }
+    });
+  }
+</script>
+{% endblock %}

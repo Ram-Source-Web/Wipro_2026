@@ -319,27 +319,30 @@ class AIResumeAnalyzer:
 
     @classmethod
     def _call_gemini(cls, resume_text, job_description, api_key):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         prompt = f"""
-You are an expert ATS (Applicant Tracking System) Auditor and Senior Technical Recruiter.
-Analyze the following resume against the job description (if provided).
+You are an expert ATS (Applicant Tracking System) Auditor and Principal Technical Recruiter.
+Carefully read the candidate's actual resume below.
+Extract and rewrite their REAL project and experience bullets.
+CRITICAL INSTRUCTION: Do NOT pick college names, university names, degrees, or dates as bullet points to rewrite. Only pick project accomplishments or work experience responsibilities.
+
 Return ONLY a valid JSON object matching this exact schema:
 {{
   "candidate_name": string,
-  "score": integer (20 to 95),
-  "resume_quality_score": integer (20 to 95),
-  "formatting_score": integer (20 to 95),
-  "skills_score": integer (0 to 35),
-  "evidence_score": integer (0 to 25),
-  "struct_score": integer (0 to 20),
-  "contact_score": integer (0 to 20),
+  "score": integer (45 to 94),
+  "resume_quality_score": integer (45 to 95),
+  "formatting_score": integer (50 to 95),
+  "skills_score": integer (10 to 35),
+  "evidence_score": integer (10 to 25),
+  "struct_score": integer (10 to 20),
+  "contact_score": integer (10 to 20),
   "sections_detected": [string],
   "detected_skills": [string],
   "matched_skills": [string],
   "missing_skills": [string],
   "action_verbs": [string],
   "metrics_found": [string],
-  "weak_lines": [string],
   "deductions": [{{"item": string, "points": integer, "reason": string}}],
   "recommendations": [string],
   "ai_summary": string,
@@ -351,24 +354,40 @@ Return ONLY a valid JSON object matching this exact schema:
       "skills": string,
       "experience_bullet": string,
       "project_description": string
-  }}
+  }},
+  "point_transformations": [
+      {{
+          "original": string,
+          "problem": string,
+          "improved": string,
+          "why_it_works": string
+      }}
+  ]
 }}
 
 RESUME TEXT:
 {resume_text[:4000]}
 
 JOB DESCRIPTION:
-{job_description[:2000] if job_description else "General Software / Technical Engineer"}
+{job_description[:2000] if job_description else "Software & Test Automation Engineering"}
 """
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"response_mime_type": "application/json"}
         }
-        res = requests.post(url, json=payload, timeout=20)
+        res = requests.post(url, json=payload, timeout=30)
         res.raise_for_status()
         data = res.json()
         raw_content = data["candidates"][0]["content"]["parts"][0]["text"]
         parsed = json.loads(raw_content)
+
+        if not parsed.get("email"):
+            emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', resume_text)
+            parsed["email"] = emails[0] if emails else ""
+        if not parsed.get("phone"):
+            phones = re.findall(r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', resume_text)
+            parsed["phone"] = phones[0] if phones else ""
+
         parsed["is_ai_powered"] = True
         return parsed
 

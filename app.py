@@ -9,6 +9,10 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_from_directory, flash, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from pypdf import PdfReader
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from ai_engine import AIResumeAnalyzer
 from pdf_service import generate_ats_report_pdf
 

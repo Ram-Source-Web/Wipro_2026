@@ -312,7 +312,7 @@
 
       <!-- UPI QR Code & Instructions -->
       <div class="p-5 rounded-2xl bg-black/60 border border-slate-800 inline-block mx-auto text-center">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=upi://pay?pa={{ upi_id }}&pn=RamBandaru&am={{ price_inr }}&cu=INR" alt="UPI QR Code" class="mx-auto rounded-xl mb-3 shadow-lg">
+        <img src="/static/phonepe_qr.jpg" alt="PhonePe QR Code" class="mx-auto rounded-xl mb-3 shadow-lg" style="width:180px;height:180px;object-fit:contain;">
         <p class="text-xs font-mono text-cyan-300 font-bold">UPI ID: {{ upi_id }}</p>
         <p class="text-[11px] text-slate-400 mt-0.5">Scan via Google Pay, PhonePe, or Paytm</p>
       </div>

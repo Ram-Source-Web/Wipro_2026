@@ -424,9 +424,12 @@
         
         statusMsg.textContent = data.message || data.error;
         statusMsg.classList.remove('hidden');
-        payBtn.textContent = '✅ Submitted! Awaiting verification...';
+        payBtn.textContent = '✅ Submitted! Waiting for verification...';
         payBtn.classList.remove('bg-emerald-600');
         payBtn.classList.add('bg-cyan-700');
+
+        // Start auto-polling for payment verification
+        startPaymentPolling();
       } catch (err) {
         alert('Error connecting to server. Please try again.');
         payBtn.disabled = false;
@@ -434,5 +437,35 @@
       }
     });
   }
+
+  // Auto-poll payment status every 5 seconds (only on locked pages)
+  {% if not is_unlocked %}
+  function startPaymentPolling() {
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/check-payment-status/{{ scan.id }}');
+        const data = await res.json();
+        if (data.unlocked) {
+          clearInterval(pollInterval);
+          // Show success message before reload
+          document.body.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0f172a;">
+              <div style="text-align:center;color:white;font-family:system-ui;">
+                <div style="font-size:48px;margin-bottom:16px;">🎉</div>
+                <h2 style="font-size:24px;font-weight:bold;color:#34d399;">Payment Verified!</h2>
+                <p style="color:#94a3b8;margin-top:8px;">Your full report is unlocking now...</p>
+              </div>
+            </div>`;
+          setTimeout(() => window.location.reload(), 1500);
+        }
+      } catch (e) { /* silent retry */ }
+    }, 5000);
+  }
+
+  // If payment was already submitted (status=pending), start polling immediately
+  {% if scan.payment_status == 'pending' %}
+  startPaymentPolling();
+  {% endif %}
+  {% endif %}
 </script>
 {% endblock %}

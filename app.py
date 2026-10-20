@@ -770,8 +770,30 @@ def submit_payment():
 
     return jsonify({
         "success": True, 
-        "message": "✅ Payment submitted! The owner will verify and unlock your full AI report within minutes. Please wait or refresh the page."
+        "message": "✅ Payment submitted! Your report will auto-unlock once the owner verifies. This page will update automatically."
     })
+
+@app.route("/check-payment-status/<int:scan_id>")
+def check_payment_status(scan_id):
+    """API endpoint polled by the report page to check if payment was verified."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"unlocked": False}), 401
+
+    # Check subscription first
+    if user_has_active_subscription(user):
+        return jsonify({"unlocked": True, "reason": "subscription"})
+
+    conn = get_db()
+    scan = conn.execute("SELECT payment_status, is_free FROM scans WHERE id = ? AND user_id = ?", 
+                       (scan_id, user["id"])).fetchone()
+    conn.close()
+
+    if not scan:
+        return jsonify({"unlocked": False})
+
+    is_unlocked = (scan["is_free"] == 1) or (scan["payment_status"] == "verified")
+    return jsonify({"unlocked": is_unlocked, "status": scan["payment_status"]})
 
 # ----------------- B2B AGENCY WEBSITE REQUEST -----------------
 
